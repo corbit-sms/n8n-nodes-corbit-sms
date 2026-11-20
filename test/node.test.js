@@ -210,8 +210,16 @@ test('send: status Error inside HTTP 200, text bodies and empty bodies are error
 	await assert.rejects(run(ctx({ params, responses: [fail(502, null)] })), /HTTP 502/);
 });
 
-test('send: network failure becomes a NodeApiError', async () => {
+test('send: network failure says the SMS may have been sent (see network.test.js)', async () => {
 	const params = [{ resource: 'sms', operation: 'send', senderName: 'S', to: '966501234567', message: 'Hi', options: {} }];
+	await assert.rejects(
+		run(ctx({ params, responses: [new Error('getaddrinfo ENOTFOUND api.corbit.sa')] })),
+		(e) => e.name === 'NodeOperationError' && /may have been sent/.test(e.message),
+	);
+});
+
+test('getBalance: network failure stays a NodeApiError', async () => {
+	const params = [{ resource: 'account', operation: 'getBalance' }];
 	await assert.rejects(run(ctx({ params, responses: [new Error('getaddrinfo ENOTFOUND api.corbit.sa')] })), (e) => e.name === 'NodeApiError');
 });
 

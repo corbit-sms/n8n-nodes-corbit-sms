@@ -22,12 +22,12 @@ test('a bracket at the start around a whole number is refused (it would become s
 });
 
 test('direction overrides are refused, other direction marks are removed', () => {
-	assert.equal(G.normalizeNumber('‮7654321050'), undefined);
-	assert.equal(G.normalizeNumber('‭0501234567'), undefined);
-	assert.equal(G.normalizeNumber('0501234567‮'), undefined);
-	assert.equal(G.normalizeNumber('‪0501234567‬'), SA);
-	assert.equal(G.normalizeNumber('‫0501234567‬'), SA);
-	assert.deepEqual(G.splitNumbers('‮7654321050').map(G.normalizeNumber), [undefined]);
+	assert.equal(G.normalizeNumber('\u202e7654321050'), undefined);
+	assert.equal(G.normalizeNumber('\u202d0501234567'), undefined);
+	assert.equal(G.normalizeNumber('0501234567\u202e'), undefined);
+	assert.equal(G.normalizeNumber('\u202a0501234567\u202c'), SA);
+	assert.equal(G.normalizeNumber('\u202b0501234567\u202c'), SA);
+	assert.deepEqual(G.splitNumbers('\u202e7654321050').map(G.normalizeNumber), [undefined]);
 });
 
 test('a number is at most 40 characters once the marks are removed, and 200 with them', () => {
@@ -38,10 +38,10 @@ test('a number is at most 40 characters once the marks are removed, and 200 with
 	assert.equal(exactly40.length, 40);
 	assert.equal(G.normalizeNumber(exactly40), SA);
 	assert.equal(G.normalizeNumber('+966-' + '-'.repeat(27) + '501234567'), undefined); // 41
-	const marked = '0501234567' + '​'.repeat(190);
+	const marked = '0501234567' + '\u200b'.repeat(190);
 	assert.equal(marked.length, 200);
 	assert.equal(G.normalizeNumber(marked), SA);
-	assert.equal(G.normalizeNumber(marked + '​'), undefined);
+	assert.equal(G.normalizeNumber(marked + '\u200b'), undefined);
 });
 
 test('long input is refused quickly (no slow regex)', () => {

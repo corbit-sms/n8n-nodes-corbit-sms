@@ -199,6 +199,17 @@ function errorFromBody(
 	});
 }
 
+/** The system error code of a lost connection (e.g. ECONNRESET), looked up through wrapped errors. Never the message text. */
+function networkErrorCode(error: unknown): string | undefined {
+	let current: unknown = error;
+	for (let depth = 0; depth < 4 && current !== null && typeof current === 'object'; depth++) {
+		const code = (current as { code?: unknown }).code;
+		if (typeof code === 'string' && /^E[A-Z_]{2,30}$/.test(code)) return code;
+		current = (current as { cause?: unknown }).cause;
+	}
+	return undefined;
+}
+
 /**
  * Calls the Corbit SMS API with the stored credential.
  * Throws a NodeApiError with the API's own message when the call fails.
@@ -232,10 +243,19 @@ export async function corbitApiRequest(
 			options,
 		)) as typeof response;
 	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as JsonObject, {
-			itemIndex: extras.itemIndex,
-			...(extras.sends ? { description: MAYBE_SENT } : {}),
-		});
+		if (extras.sends) {
+			// n8n already wraps a lost connection in a NodeApiError whose text says "retry", and wrapping it
+			// again keeps that text and drops our options. A new error is the only way to warn that the SMS
+			// may have been sent (live test 2026-11-20: ECONNRESET after Corbit SMS had accepted it).
+			// The error code goes in the description only: n8n replaces a message that contains a code such as
+			// ECONNRESET with its own "retry" text.
+			const code = networkErrorCode(error);
+			throw new NodeOperationError(this.getNode(), 'Could not reach Corbit SMS; the SMS may have been sent', {
+				itemIndex: extras.itemIndex,
+				description: code ? `${MAYBE_SENT} (Error code: ${code})` : MAYBE_SENT,
+			});
+		}
+		throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: extras.itemIndex });
 	}
 
 	const statusCode = Number(response.statusCode);
