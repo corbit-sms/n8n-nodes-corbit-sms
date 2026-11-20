@@ -23,7 +23,9 @@ test('a bracket at the start around a whole number is refused (it would become s
 
 test('direction overrides are refused, other direction marks are removed', () => {
 	assert.equal(G.normalizeNumber('\u202e7654321050'), undefined);
-	assert.equal(G.normalizeNumber('\u202d0501234567'), undefined);
+	assert.equal(G.normalizeNumber('\u202d0501234567\u202c'), SA); // as iOS copies from Contacts
+	assert.equal(G.normalizeNumber('\u202d+966 50 123 4567\u202c'), SA);
+	assert.deepEqual(G.splitNumbers('\u202d+966 50 123 4567\u202c, 0509876543').map(G.normalizeNumber), [SA, '966509876543']);
 	assert.equal(G.normalizeNumber('0501234567\u202e'), undefined);
 	assert.equal(G.normalizeNumber('\u202a0501234567\u202c'), SA);
 	assert.equal(G.normalizeNumber('\u202b0501234567\u202c'), SA);
