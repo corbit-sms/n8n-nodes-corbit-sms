@@ -110,7 +110,7 @@ export class CorbitSms implements INodeType {
 						const raw = this.getNodeParameter('to', i);
 						const number = normalizeNumber(raw);
 						if (!number) {
-							throw new NodeOperationError(node, `'To' is not a valid mobile number: "${String(raw ?? '')}"`, {
+							throw new NodeOperationError(node, `'To' is not a valid mobile number: "${String(raw ?? '').slice(0, 60)}"`, {
 								itemIndex: i,
 								description:
 									'Use the international format, e.g. 966501234567. Saudi local numbers (05XXXXXXXX) are converted automatically.',
@@ -121,7 +121,7 @@ export class CorbitSms implements INodeType {
 							'POST',
 							'/api/v1/send',
 							{ senderName, number, messageBody: message, sendAtOption: 'NOW' },
-							{ headers, itemIndex: i },
+							{ headers, itemIndex: i, sends: true },
 						);
 						const sent = ((response.data as IDataObject)?.message ?? {}) as IDataObject;
 						returnData.push({
@@ -134,7 +134,10 @@ export class CorbitSms implements INodeType {
 						if (invalid.length > 0) {
 							throw new NodeOperationError(
 								node,
-								`'Numbers' contains invalid mobile numbers: ${invalid.slice(0, 5).join(', ')}${
+								`'Numbers' contains invalid mobile numbers: ${invalid
+									.slice(0, 5)
+									.map((n) => n.slice(0, 40))
+									.join(', ')}${
 									invalid.length > 5 ? ` and ${invalid.length - 5} more` : ''
 								}`,
 								{
@@ -156,7 +159,7 @@ export class CorbitSms implements INodeType {
 							'POST',
 							'/api/v1/send-bulk',
 							{ senderName, numbers, messageBody: message, sendAtOption: 'Now' },
-							{ headers, itemIndex: i },
+							{ headers, itemIndex: i, sends: true },
 						);
 						const sent = ((response.data as IDataObject)?.message ?? {}) as IDataObject;
 						returnData.push({

@@ -18,12 +18,25 @@ export interface CorbitRequestExtras {
 	qs?: IDataObject;
 	headers?: IDataObject;
 	itemIndex?: number;
+	/** True for a request that sends SMS: a lost connection may come after Corbit SMS accepted it. */
+	sends?: boolean;
 }
 
+const MAYBE_SENT =
+	'The connection was lost after the request was sent, so the SMS may have been sent. Check its status or your Corbit SMS account before you run this again, so it is not sent twice.';
+
 // Invisible marks that come with numbers copied on Android, iOS and Arabic pages: Arabic letter
-// mark, zero-width characters, direction marks, embeddings, overrides and isolates, word joiner, BOM.
+// mark, zero-width characters, direction marks, embeddings and isolates, word joiner, BOM.
 // Removing them never changes a number.
-const PHONE_MARKS = /[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+const PHONE_MARKS = /[\u061c\u200b-\u200f\u202a-\u202c\u2060-\u2064\u2066-\u2069\ufeff]/g;
+// Direction overrides (U+202D, U+202E) reverse how the digits are shown, so the number on the
+// screen is not the number that would be sent: such a number is refused, not cleaned.
+const DIRECTION_OVERRIDES = /[\u202d\u202e]/;
+// A number is at most 40 characters once the invisible marks are removed, and 200 with them.
+const MAX_NUMBER_LENGTH = 40;
+const MAX_RAW_NUMBER_LENGTH = 200;
+// A bracket at the start of a number may only hold a country code: "(+966) 50 123 4567".
+const LEADING_BRACKET = /^\(\s*(?:\+|00)?\d{1,4}\s*\)/;
 
 /** Balanced brackets, never nested, and no ")" closing the number (only spaces or hyphens after it). */
 function bracketsOk(text: string): boolean {
@@ -55,6 +68,7 @@ export function normalizeNumber(raw: unknown): string | undefined {
 		if (!Number.isSafeInteger(raw) || raw <= 0) return undefined;
 		text = String(raw);
 	} else if (typeof raw === 'string') {
+		if (raw.length > MAX_RAW_NUMBER_LENGTH || DIRECTION_OVERRIDES.test(raw)) return undefined;
 		text = raw
 			.replace(PHONE_MARKS, '')
 			.trim()
@@ -63,15 +77,19 @@ export function normalizeNumber(raw: unknown): string | undefined {
 	} else {
 		return undefined;
 	}
+	if (text.length > MAX_NUMBER_LENGTH) return undefined;
 	// Only digits, spaces, "-", brackets and one leading "+" (an opening bracket may come before it).
 	// Checked on the text as written, before anything is removed: a dot is never a separator.
-	if (!/^[\s(]*\+?[\d\s\-()]+$/.test(text)) return undefined;
+	const body = text.replace(/^\(\s*/, '');
+	if (!/^\+?[\d\s\-()]+$/.test(body)) return undefined;
+	// "(+971501234567) 1" would become 9715012345671, someone else's number.
+	if (text.startsWith('(') && !LEADING_BRACKET.test(text)) return undefined;
 	// A ")" closing the number is a note or an extension ("+971501234567 (1)", "(1-01)", "(1) -"), and brackets
 	// must pair up without nesting ("(1", "1)", "((1))"): dropping them would give 9715012345671, someone else.
 	// Balanced brackets at the start or in the middle are formatting: "(+966) 50 ...", "+1 (202) 555-0123".
 	if (!bracketsOk(text)) return undefined;
 	let digits = text.replace(/\D/g, '');
-	if (/^[\s(]*\+/.test(text)) {
+	if (body.startsWith('+')) {
 		// Already international.
 	} else if (digits.startsWith('00')) {
 		digits = digits.slice(2);
@@ -93,7 +111,8 @@ export function normalizeNumber(raw: unknown): string | undefined {
 // new line, tab, and the Arabic comma and semicolon (what the Arabic iPhone
 // keyboard types). A space alone is not a separator: see splitNumbers.
 const LIST_SEPARATORS = /[,;،؛\r\n\t]+/;
-// A piece that reads as one number written with spaces (as copied from phone contacts).
+// A piece that reads as one number written with spaces (as copied from phone contacts). It is tested
+// after an opening bracket at the start is removed, so "(+966) 50 123 4567" stays one number.
 const SPACED_NUMBER = /^\+?[0-9٠-٩۰-۹()\-\s]+$/;
 
 /**
@@ -108,7 +127,7 @@ export function splitNumbers(value: unknown): string[] {
 	for (const piece of String(value).split(LIST_SEPARATORS)) {
 		const p = piece.replace(PHONE_MARKS, '').trim();
 		if (p === '') continue;
-		if (SPACED_NUMBER.test(p)) {
+		if (SPACED_NUMBER.test(p.replace(/^\(\s*/, ''))) {
 			const joined = p.replace(/\s+/g, '');
 			if (normalizeNumber(joined)) {
 				tokens.push(joined);
@@ -213,7 +232,10 @@ export async function corbitApiRequest(
 			options,
 		)) as typeof response;
 	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: extras.itemIndex });
+		throw new NodeApiError(this.getNode(), error as JsonObject, {
+			itemIndex: extras.itemIndex,
+			...(extras.sends ? { description: MAYBE_SENT } : {}),
+		});
 	}
 
 	const statusCode = Number(response.statusCode);
